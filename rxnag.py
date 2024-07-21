@@ -8,9 +8,7 @@ from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox, QPushButton
 from PyQt5.QtWidgets import QMessageBox, QCheckBox, QSpacerItem, QSizePolicy, QLineEdit, QPushButton, QLabel
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QAction, QFileDialog
-from PyQt5.QtGui import QDesktopServices
 from PyQt5.QtCore import QUrl
-
 from pathlib import Path
 import pyglet
 
@@ -251,13 +249,16 @@ class RxNag(QWidget):
 
     def create_tray_menu(self):
         tray_menu = QMenu()
+        about_action = QAction("About", self)
+        about_action.triggered.connect(self.show_about_dialog)
         show_action = QAction("Show", self)
         show_action.triggered.connect(self.show_window)
         exit_action = QAction("Exit", self)
         exit_action.triggered.connect(self.quit_app)
+        tray_menu.addAction(about_action)
         tray_menu.addAction(show_action)
         tray_menu.addAction(exit_action)
-        self.tray_icon.activated.connect(self.show_window)
+        self.tray_icon.activated.connect(self.toggle_window)
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.show()
 
@@ -272,14 +273,22 @@ class RxNag(QWidget):
             self.save_config()
             self.update_ui()
 
-    def show_window(self, reason=None):
-        if reason == QSystemTrayIcon.Trigger or reason is None:
+    def show_window(self): # selected show from tray icon context menu
+        if self.isHidden():
+            self.show()
+            self.activateWindow()
+        else:
+            self.hide()
+
+    def toggle_window(self, reason=None):        
+        print(f"vis {self.isHidden()} reason: {reason}")
+        if reason == QSystemTrayIcon.Trigger: # left-clicked icon in systray
+            print(f"self.isHidden {self.isHidden()}")
             if self.isHidden():
-                self.show()
-            else:
                 self.activateWindow()
-                self.raise_()
-                QApplication.setActiveWindow(self)
+            else:
+                if not self.hasFocus():
+                    self.raise_()
 
     def quit_app(self):
         self.save_config()
