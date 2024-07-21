@@ -49,9 +49,15 @@ class RxNagWidget(QWidget):
         layout.addWidget(self.last_taken_label)
         layout.addWidget(self.taken_button)        
                
+        # keep the times updated in the gui
+        self.update_timer = QTimer(self)
+        self.update_timer.timeout.connect(self.update_time_labels)
+        self.update_timer.start(10*1000) # 10 seconds
 
         self.setLayout(layout)
 
+    def update_time_labels(self):
+        self.last_taken_label.setText(self.get_last_taken_text())        
 
     def edit_medication(self):
         edit_dialog = EditMedicationDialog(self.medication, self.last_taken, self.interval,self.muted, self)
