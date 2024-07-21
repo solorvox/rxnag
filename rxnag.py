@@ -52,7 +52,7 @@ class RxNagWidget(QWidget):
         # keep the times updated in the gui
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.update_time_labels)
-        self.update_timer.start(10*1000) # 10 seconds
+        self.update_timer.start(60*1000) # 1 min
 
         self.setLayout(layout)
 
