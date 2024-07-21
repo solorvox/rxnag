@@ -15,10 +15,10 @@ Add your medications, set their dose _interval_. (how often you take them) When 
 
 These notifications will continue every _notification interval_. (default 5 minutes)  
 
-You can ** Mute ** notifications disable them per-medication.  While muted they will still be tracked when taken.
+You can **Mute** notifications to disable them per-medication.  While muted they will still be tracked when taken.
 
 ## Auto run after login
-It is possible to add RxNag to auto run when you login.  For example, in Linux Mint for use ** Mint Menu -> Startup Applications ** then select the ** + ** icon. (plus)
+It is possible to add RxNag to auto run when you login.  For example, in Linux Mint for use **Mint Menu -> Startup Applications** then select the **[+]** icon. (plus)
 
 ## Configuration
 Select the **[Config]** button.
