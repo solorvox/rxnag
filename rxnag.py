@@ -20,7 +20,6 @@ class RxNagWidget(QWidget):
         self.muted = muted
         self.interval = interval  # in hours
         self.notice_delay = 6 # in seconds
-        
         layout = QVBoxLayout()
         medline_layout = QHBoxLayout()
 
@@ -74,6 +73,8 @@ class RxNagWidget(QWidget):
         self.parent().save_config()
 
     def display_reminder(self):
+        if self.parent().mute_all: # check if mute_all is set
+            return
         # Set the resource path to the directory containing the sound file
         sound_file_dir = os.path.dirname(self.parent().sound_file)
         pyglet.resource.path = [sound_file_dir]
@@ -132,7 +133,8 @@ class RxNag(QWidget):
         self.sound_file = "reminder.wav"  # Default sound 
         self.has_played_audio = False
         self.setWindowIcon(QIcon('icon.png'))
-        
+        self.mute_all = False
+
         self.config_file = Path.home() / ".local" / "share" / "rxnag" / "config.json"
         self.load_config()
 
@@ -219,6 +221,11 @@ class RxNag(QWidget):
         self.about_button = QPushButton("A&bout")
         self.about_button.clicked.connect(self.show_about_dialog)
         config_layout.addWidget(self.about_button)
+        
+        self.mute_all_button = QPushButton("&Mute all")
+        self.mute_all_button.clicked.connect(self.toggle_mute_all)
+        self.mute_all_button.setCheckable(True)
+        config_layout.addWidget(self.mute_all_button)
         self.exit_button = QPushButton("&Exit")
         self.exit_button.clicked.connect(self.quit_app)
         config_layout.addWidget(self.exit_button)
@@ -240,6 +247,8 @@ class RxNag(QWidget):
         #         color: #eee;
         #     }            
         # """)
+    def toggle_mute_all(self):
+        self.mute_all = not self.mute_all
 
     def show_about_dialog(self):
         about_dialog = AboutDialog(self)
