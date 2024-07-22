@@ -45,6 +45,5 @@ This app **_DOES NOT_** have any of the following "features":
 * Transmit anything to anywhere else
 * Spam you with donation requests
 * Take hundreds of MB/GB of disk space or RAM (currently < 1MB on disk)
-* Dose anything other than nag you to take your medications
-
+* Does anything other than nag you to take your medications
 
