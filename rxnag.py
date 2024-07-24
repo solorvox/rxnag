@@ -193,13 +193,26 @@ class RxNag(QWidget):
 
     def create_ui(self):
         layout = QVBoxLayout()
+        self.setLayout(layout)
 
-        self.medication_list = []
-        for medication, last_taken, interval, muted in self.config:
-            medication_widget = RxNagWidget(medication, last_taken, interval, muted, self)
-            self.medication_list.append(medication_widget)
-            layout.addWidget(medication_widget)
-            
+        toolbar_area = QHBoxLayout()
+        self.config_button = QPushButton("&Config")
+        self.config_button.clicked.connect(self.show_config_dialog)
+        toolbar_area.addWidget(self.config_button)
+        layout.addLayout(toolbar_area)
+        
+        self.about_button = QPushButton("A&bout")
+        self.about_button.clicked.connect(self.show_about_dialog)
+        toolbar_area.addWidget(self.about_button)
+        
+        self.mute_all_button = QPushButton("&Mute all")
+        self.mute_all_button.clicked.connect(self.toggle_mute_all)
+        self.mute_all_button.setCheckable(True)
+        toolbar_area.addWidget(self.mute_all_button)
+        self.exit_button = QPushButton("&Exit")
+        self.exit_button.clicked.connect(self.quit_app)
+        toolbar_area.addWidget(self.exit_button)
+                    
         add_medication_layout = QHBoxLayout()
         self.medication_input = QLineEdit()
         self.medication_input.setPlaceholderText("Add new medication")
@@ -207,30 +220,15 @@ class RxNag(QWidget):
         add_medication_layout.addWidget(self.medication_input)
         self.add_button.clicked.connect(self.add_medication)
         add_medication_layout.addWidget(self.medication_input)
-        add_medication_layout.addWidget(self.add_button)
-        
+        add_medication_layout.addWidget(self.add_button)        
+        layout.addLayout(add_medication_layout)                
 
-        layout.addLayout(add_medication_layout)        
-        # Add a new line for the config button
-        config_layout = QHBoxLayout()
-        self.config_button = QPushButton("&Config")
-        self.config_button.clicked.connect(self.show_config_dialog)
-        config_layout.addWidget(self.config_button)
-        layout.addLayout(config_layout)
-        
-        self.about_button = QPushButton("A&bout")
-        self.about_button.clicked.connect(self.show_about_dialog)
-        config_layout.addWidget(self.about_button)
-        
-        self.mute_all_button = QPushButton("&Mute all")
-        self.mute_all_button.clicked.connect(self.toggle_mute_all)
-        self.mute_all_button.setCheckable(True)
-        config_layout.addWidget(self.mute_all_button)
-        self.exit_button = QPushButton("&Exit")
-        self.exit_button.clicked.connect(self.quit_app)
-        config_layout.addWidget(self.exit_button)
-        
-        self.setLayout(layout)
+        self.medication_list = []
+        for medication, last_taken, interval, muted in self.config:
+            medication_widget = RxNagWidget(medication, last_taken, interval, muted, self)
+            self.medication_list.append(medication_widget)
+            layout.addWidget(medication_widget)
+
         # self.setStyleSheet("""
         #     QWidget {
         #         background-color: #333;
