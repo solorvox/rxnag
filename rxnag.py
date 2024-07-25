@@ -2,6 +2,7 @@
 import os
 import json
 import time
+from dateutil import parser
 from datetime import datetime, timedelta
 from PyQt5.QtGui import QIcon, QPalette, QColor
 from PyQt5.QtCore import Qt, QTimer
@@ -12,11 +13,13 @@ from PyQt5.QtCore import QUrl
 from pathlib import Path
 import pyglet
 
+epoch1970 = epoch = datetime(1970, 1, 1)
+
 class RxNagWidget(QWidget):
     def __init__(self, medication, last_taken, interval, muted, parent=None):
         super().__init__(parent)
         self.medication = medication
-        self.last_taken = last_taken
+        self.last_taken = last_taken # in seconds since epoch
         self.muted = muted
         self.interval = interval  # in hours
         self.notice_delay = 6 # in seconds
@@ -42,10 +45,16 @@ class RxNagWidget(QWidget):
        
         layout.addLayout(medline_layout)
 
+        time_text_layout = QHBoxLayout()
         self.last_taken_label = QLabel(self.get_last_taken_text())
+        time_text_layout.addWidget(self.last_taken_label)        
+        self.next_dose_label = QLabel(self.get_next_dose_text())
+        time_text_layout.addWidget(self.next_dose_label)    
+        layout.addLayout(time_text_layout)
+
         self.taken_button = QPushButton("Mark taken")
         self.taken_button.clicked.connect(self.mark_as_taken)
-        layout.addWidget(self.last_taken_label)
+        
         layout.addWidget(self.taken_button)        
                
         # keep the times updated in the gui
@@ -57,16 +66,20 @@ class RxNagWidget(QWidget):
 
     def update_time_labels(self):
         self.last_taken_label.setText(self.get_last_taken_text())        
+        self.next_dose_label.setText(self.get_next_dose_text())
 
     def edit_medication(self):
-        edit_dialog = EditMedicationDialog(self.medication, self.last_taken, self.interval,self.muted, self)
+        edit_dialog = EditMedicationDialog(self.medication, self.last_taken, self.interval, self.muted, self)
         if edit_dialog.exec_():
             self.medication = edit_dialog.medication_input.text()
-            self.last_taken = datetime.strptime(edit_dialog.last_taken_input.text(), "%Y-%m-%d %H:%M")
+            strtime = edit_dialog.last_taken_input.text()
+            self.last_taken = int(parser.parse(strtime).timestamp())            
             self.interval = edit_dialog.interval_input.value()
             self.medication_label.setText(self.medication)
             self.last_taken_label.setText(self.get_last_taken_text())
             self.parent().save_config()
+            self.parent().update_ui()
+            self.update_time_labels()
 
     def toggle_mute(self, checked):
         self.muted = checked
@@ -109,18 +122,31 @@ class RxNagWidget(QWidget):
             
     def get_last_taken_text(self):
         now = datetime.now()
-        time_diff = now - self.last_taken
-        hours_ago = time_diff.total_seconds() // 3600
-        if hours_ago < 1:
-            return f"Last taken: {int(time_diff.total_seconds() // 60)} mins ago"
+        if self.last_taken > 0:
+            last_taken_dt = datetime.fromtimestamp(self.last_taken)
+            time_diff = now - last_taken_dt
+            hours_ago = time_diff.total_seconds() // 3600
+            if hours_ago < 1:
+                return f"Last taken: {int(time_diff.total_seconds() // 60)} mins ago"
+            else:
+                return f"Last taken: {int(hours_ago)} hours ago"
         else:
-            return f"Last taken: {int(hours_ago)} hours ago"
+            return "Last taken: Never"
+
+    def get_next_dose_text(self):
+        next_dose_secs = self.last_taken + (self.interval * 3600) - int(time.time())
+        if next_dose_secs <= 0:
+            return "Next dose: now"
+        elif next_dose_secs < 3600:
+            return f"Next dose: {int(next_dose_secs // 60)} mins"
+        else:
+            return f"Next dose: {int(next_dose_secs // 3600)} hours"
 
     def delete_medication(self):
         self.parent().delete_medication(self)
 
     def mark_as_taken(self):
-        self.last_taken = datetime.now()
+        self.last_taken = int(time.time())
         self.last_taken_label.setText(self.get_last_taken_text())
         self.parent().save_config()
 
@@ -229,22 +255,6 @@ class RxNag(QWidget):
             self.medication_list.append(medication_widget)
             layout.addWidget(medication_widget)
 
-        # self.setStyleSheet("""
-        #     QWidget {
-        #         background-color: #333;
-        #         color: #eee;
-        #         padding: 10px;
-        #         border-radius: 5px;
-        #     }
-        #     QPushButton { 
-        #         background-color: #001166;
-        #         color: #eee;
-        #     }
-        #     QPushButton:hover { 
-        #         background-color: #001199;
-        #         color: #eee;
-        #     }            
-        # """)
     def toggle_mute_all(self):
         self.mute_all = not self.mute_all
 
@@ -279,7 +289,7 @@ class RxNag(QWidget):
     def add_medication(self, muted=False):
         medication = self.medication_input.text().strip()
         if medication:
-            medication_widget = RxNagWidget(medication, datetime.now(), 6, muted, self)
+            medication_widget = RxNagWidget(medication, int(time.time()), 6, muted, self)
             self.medication_list.append(medication_widget)
             self.layout().insertWidget(len(self.medication_list), medication_widget)
             self.medication_input.clear()
@@ -294,9 +304,7 @@ class RxNag(QWidget):
             self.hide()
 
     def toggle_window(self, reason=None):        
-        print(f"vis {self.isHidden()} reason: {reason}")
         if reason == QSystemTrayIcon.Trigger: # left-clicked icon in systray
-            print(f"self.isHidden {self.isHidden()}")
             if self.isHidden():
                 self.activateWindow()
             else:
@@ -310,7 +318,7 @@ class RxNag(QWidget):
     def save_config(self):
         config = {
             "medications": [
-                {"name": widget.medication, "last_taken": widget.last_taken.isoformat(), "interval": widget.interval, "muted": widget.muted}
+                {"name": widget.medication, "last_taken": widget.last_taken, "interval": widget.interval, "muted": widget.muted}
                 for widget in self.medication_list
             ],
             "notification_timer_mins": self.notification_timer_mins,
@@ -327,9 +335,9 @@ class RxNag(QWidget):
             self.config = [
                 (
                     medication["name"],
-                    datetime.fromisoformat(medication["last_taken"]),
+                    medication["last_taken"],
                     medication["interval"],
-                    medication.get("muted", False)  # Use False as the default value if "muted" is not found
+                    medication.get("muted", False)
                 )
                 for medication in config.get("medications", [])
             ]
@@ -340,8 +348,8 @@ class RxNag(QWidget):
             self.notification_timer_mins = 5
             self.sound_file = "reminder.wav"
 
-        self.notification_timer_mins = max(1,self.notification_timer_mins)
-        self.notification_timer_mins = min(60,self.notification_timer_mins)
+        self.notification_timer_mins = max(1, self.notification_timer_mins)
+        self.notification_timer_mins = min(60, self.notification_timer_mins)
 
 class EditMedicationDialog(QDialog):
     def __init__(self, medication, last_taken, interval, muted, parent=None):
@@ -360,7 +368,7 @@ class EditMedicationDialog(QDialog):
 
         last_taken_layout = QHBoxLayout()
         last_taken_label = QLabel("Last Taken:")
-        self.last_taken_input = QLineEdit(last_taken.strftime("%Y-%m-%d %H:%M"))
+        self.last_taken_input = QLineEdit(datetime.fromtimestamp(last_taken).strftime('%Y-%m-%d %H:%M'))
         last_taken_layout.addWidget(last_taken_label)
         last_taken_layout.addWidget(self.last_taken_input)
         layout.addLayout(last_taken_layout)
@@ -459,7 +467,7 @@ class AboutDialog(QDialog):
 
         label_text = """
             <p>RxNag - Medication Reminder</p>
-            <p>Version 1.0.0</p>
+            <p>Version 1.0.1</p>
             <p>Copyright (c) 2024 Solorvox @ <a href="https://epic.geek.nz/">epic.geek.nz</a></p>
             <p>License: GPL-3</p>
         """
