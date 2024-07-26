@@ -13,8 +13,6 @@ from PyQt5.QtCore import QUrl
 from pathlib import Path
 import pyglet
 
-epoch1970 = epoch = datetime(1970, 1, 1)
-
 class RxNagWidget(QWidget):
     def __init__(self, medication, last_taken, interval, muted, parent=None):
         super().__init__(parent)
@@ -115,8 +113,8 @@ class RxNagWidget(QWidget):
             medication_widget.check_reminder()
 
     def check_reminder(self):
-        next_due = self.last_taken + timedelta(hours=self.interval)
-        now = datetime.now()
+        next_due = self.last_taken + (self.interval * 3600)
+        now = int(time.time())
         if now >= next_due and not self.muted:
             self.display_reminder()
             
