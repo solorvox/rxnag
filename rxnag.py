@@ -2,6 +2,7 @@
 import os
 import json
 import time
+import argparse
 from dateutil import parser
 from datetime import datetime, timedelta
 from PyQt5.QtGui import QIcon, QPalette, QColor
@@ -26,7 +27,6 @@ class RxNagWidget(QWidget):
         self.last_taken = last_taken # in seconds since epoch
         self.muted = muted
         self.interval = interval  # in hours
-        self.notice_delay = 6 # in seconds
         layout = QVBoxLayout()
         medline_layout = QHBoxLayout()
 
@@ -90,7 +90,7 @@ class RxNagWidget(QWidget):
         self.parent().save_config()
         
     def display_reminder(self):
-        if self.parent().mute_all: # check if mute_all is set
+        if self.parent().mute_all or self.muted: # check if muted
             return
 
         self.parent().play_notification_sound()
@@ -98,7 +98,7 @@ class RxNagWidget(QWidget):
             "Medication Reminder",
             f"💊 Time to take {self.medication}",
             QSystemTrayIcon.Information,
-            self.notice_delay * 1000
+            self.parent().notification_shown_secs * 1000
         )
 
     def check_all_reminders(self):
@@ -148,11 +148,14 @@ class RxNag(QWidget):
         self.setWindowTitle("RxNag - Medication Reminder")
         self.setGeometry(600, 200, 700, 500)
         self.notification_timer_mins = 1 
+        self.notification_shown_secs = 10
+        self.play_sound = True
         self.sound_file = "reminder.wav"  # Default sound 
         self.sound_volume = 0.75 # default 75%
         self.has_played_audio = False
         self.setWindowIcon(QIcon('icon.png'))
         self.mute_all = False
+        self.start_minimized = False
         
         self.config_file = Path.home() / ".local" / "share" / "rxnag" / "config.json"
         self.load_config()
@@ -168,6 +171,8 @@ class RxNag(QWidget):
         self.start_notification_timer()
 
     def play_notification_sound(self):
+        if not self.play_sound: # check if sound disabled
+            return
         try:
             if not self.has_played_audio:
                 sound = pygame.mixer.Sound(self.sound_file)
@@ -272,7 +277,6 @@ class RxNag(QWidget):
         config_dialog = ConfigDialog(self, self)
         if config_dialog.exec_():
             self.notification_timer_mins = config_dialog.notification_timer_mins_input.value()
-            self.sound_file = config_dialog.sound_file_label.text()
             self.restart_timer()
             self.save_config()
 
@@ -295,7 +299,7 @@ class RxNag(QWidget):
     def add_medication(self, muted=False):
         medication = self.medication_input.text().strip()
         if medication:
-            medication_widget = RxNagWidget(medication, int(time.time()), 6, muted, self)
+            medication_widget = RxNagWidget(medication, int(time.time()), self.notification_shown_secs, muted, self)
             self.medication_list.append(medication_widget)
             self.layout().insertWidget(len(self.medication_list), medication_widget)
             self.medication_input.clear()
@@ -326,10 +330,13 @@ class RxNag(QWidget):
             "medications": [
                 {"name": widget.medication, "last_taken": widget.last_taken, "interval": widget.interval, "muted": widget.muted}
                 for widget in self.medication_list
-            ],
+            ],            
             "notification_timer_mins": self.notification_timer_mins,
+            "notification_shown_secs": self.notification_shown_secs,
+            "play_sound": self.play_sound,
             "sound_file": self.sound_file,
-            "sound_volume": self.sound_volume
+            "sound_volume": self.sound_volume,     
+            "start_minimized": self.start_minimized,
         }
         os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         with open(self.config_file, "w") as f:
@@ -349,16 +356,18 @@ class RxNag(QWidget):
                 for medication in config.get("medications", [])
             ]
             self.notification_timer_mins = config.get("notification_timer_mins", 5)
+            self.notification_shown_secs = config.get("notification_shown_secs", 10)
+            self.play_sound = config.get("play_sound", True)
             self.sound_file = config.get("sound_file", "reminder.wav")
             self.sound_volume = config.get("sound_volume", 0.75)
-            self.sound_volume = max(0.0, min(1.0, self.sound_volume))
+            self.sound_volume = max(0.0, min(1.0, self.sound_volume))            
+            self.start_minimized = config.get("start_minimized", False)
         except (FileNotFoundError, json.JSONDecodeError, ValueError):
             self.config = []
-            self.notification_timer_mins = 5
             self.sound_file = "reminder.wav"
 
-        self.notification_timer_mins = max(1, self.notification_timer_mins)
-        self.notification_timer_mins = min(60, self.notification_timer_mins)
+        self.notification_timer_mins = max(1, min(60, self.notification_timer_mins))
+        self.notification_shown_secs = max(1, min(60, self.notification_shown_secs))
 
 class EditMedicationDialog(QDialog):
     def __init__(self, medication, last_taken, interval, muted, parent=None):
@@ -422,17 +431,37 @@ class ConfigDialog(QDialog):
         self.notification_timer_mins_input = QSpinBox()        
         self.notification_timer_mins_input.setMinimum(1)
         self.notification_timer_mins_input.setRange(1, 60)
-        self.notification_timer_mins_input.adjustSize()
-        
+        self.notification_timer_mins_input.setFixedWidth(100)
         self.notification_timer_mins_input.setValue(int(self.parent_widget.notification_timer_mins))
         interval_layout.addWidget(interval_label)
         interval_layout.addWidget(self.notification_timer_mins_input)
         layout.addLayout(interval_layout)
 
+        notification_shown_layout = QHBoxLayout()
+        notification_shown_label = QLabel("Notification shown (seconds): ")
+        self.notification_shown_secs_input = QSpinBox()        
+        self.notification_shown_secs_input.setMinimum(1)
+        self.notification_shown_secs_input.setRange(1, 60)
+        self.notification_shown_secs_input.setFixedWidth(100)
+        self.notification_shown_secs_input.setValue(int(self.parent_widget.notification_shown_secs))
+        notification_shown_layout.addWidget(notification_shown_label)
+        notification_shown_layout.addWidget(self.notification_shown_secs_input)
+        layout.addLayout(notification_shown_layout)
+
+        # play sound
+        play_sound_toggle_layout = QHBoxLayout()
+        play_sound_toggle_label = QLabel("Play sound: ")
+        self.play_sound_toggle = QCheckBox("")                
+        self.play_sound_toggle.setChecked(self.parent_widget.play_sound)
+        self.play_sound_toggle.toggled.connect(self.toggle_play_sound)
+        play_sound_toggle_layout.addWidget(play_sound_toggle_label)
+        play_sound_toggle_layout.addWidget(self.play_sound_toggle)
+        layout.addLayout(play_sound_toggle_layout)
+
         # Sound file
         sound_layout = QHBoxLayout()
         sound_label = QLabel("Notification sound file: ")
-        self.sound_file_label = QLabel(self.parent_widget.sound_file)
+        self.sound_file_label = QLabel(os.path.basename(self.parent_widget.sound_file))
         self.sound_file_button = QPushButton("Choose File")
         self.sound_file_button.clicked.connect(self.select_sound_file)
         sound_layout.addWidget(sound_label)
@@ -455,6 +484,16 @@ class ConfigDialog(QDialog):
         volume_layout.addWidget(self.volume_slider)
         layout.addLayout(volume_layout)
 
+        # start minimized
+        start_minimized_layout = QHBoxLayout()
+        start_minimized_label = QLabel("Start minimized: ")
+        self.start_minimized_toggle = QCheckBox("")                
+        self.start_minimized_toggle.setChecked(self.parent_widget.start_minimized)
+        self.start_minimized_toggle.toggled.connect(self.toggle_start_minimized)
+        start_minimized_layout.addWidget(start_minimized_label)
+        start_minimized_layout.addWidget(self.start_minimized_toggle)
+        layout.addLayout(start_minimized_layout)
+
         button_layout = QHBoxLayout()
         self.save_button = QPushButton("&Save")
         self.save_button.setDefault(True)
@@ -473,8 +512,15 @@ class ConfigDialog(QDialog):
             selected_files = file_dialog.selectedFiles()
             if selected_files:
                 selected_file = selected_files[0]
-                self.sound_file_label.setText(selected_file)
-    
+                self.parent_widget.sound_file = selected_file                
+                self.sound_file_label.setText(os.path.basename(selected_file))
+
+    def toggle_play_sound(self):
+        self.parent_widget.play_sound = not self.parent_widget.play_sound
+
+    def toggle_start_minimized(self):
+        self.parent_widget.start_minimized = not self.parent_widget.start_minimized
+
     def adjust_volume_feedback(self):
         self.parent_widget.play_notification_sound()
         self.parent_widget.has_played_audio = False    
@@ -488,7 +534,7 @@ class ConfigDialog(QDialog):
 
     def update(self):
         self.parent_widget.notification_timer_mins = self.notification_timer_mins_input.value()
-        self.parent_widget.sound_file = self.sound_file_label.text()
+        self.parent_widget.notification_shown_secs = self.notification_shown_secs_input.value()
         self.update_volume()
         self.parent_widget.restart_timer()
         self.parent_widget.save_config()
@@ -503,7 +549,7 @@ class AboutDialog(QDialog):
 
         label_text = """
             <p>RxNag - Medication Reminder</p>
-            <p>Version 1.0.1</p>
+            <p>Version 1.0.2</p>
             <p>Copyright (c) 2024 Solorvox @ <a href="https://epic.geek.nz/">epic.geek.nz</a></p>
             <p>License: GPL-3</p>
         """
@@ -531,10 +577,18 @@ def single_instance_check():
 
 if __name__ == "__main__":
     single_instance_check()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--minimized", action="store_true")
+    parser.add_argument("--show", action="store_true")
+    args = parser.parse_args()
+
     pygame.mixer.init() # setup sound system
+
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
-    reminder = RxNag()
-    reminder.show()
+    reminder = RxNag()    
+    # if not set to minimize, show the main window
+    if args.show or not args.minimized and not reminder.start_minimized:
+        reminder.show()
     app.exec_()
     os.remove(pidfile)

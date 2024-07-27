@@ -4,7 +4,7 @@ A very lightweight off-line application to nag you when it is time to take your 
 
 ## Requirements
 
-You need Python3, PyQt5, and PyGame for audio playback.
+You need Python3, PyQt5, and PyGame. (PyGame is for audio playback).
 
 On Linux Mint, Ubuntu, Debian, etc. (Python3 should already be installed)
 
@@ -24,12 +24,20 @@ It is possible to add RxNag to auto run when you login.  For example, in Linux M
 Select the **[Config]** button.
 
 Notification interval (in minutes) [Default 5] - This is how often to check for next dose
+Notification shown  (in seconds) [Default 10] - How long the popup notification lasts before closing
 Notification sound file [Default reminder.wav] - Custom audio file (.wav,.ogg,.mp3) 
+Notification volume [Default 75%] 
+Start minimized - Start the application minimized to system tray.  (can also use `--minimized` argument)
 
 Configuration and all data are only stored in your home folder.
 ```$HOME/.local/share/rxnag/config.json```
 
 Please ensure you are backing up your home directory.
+
+## Command line arguments
+
+* `--show` - Shows the window regardless of minimized setting in config.
+* `--minimized` - Start minimized to the system tray
 
 ## Tips
 You can right click on the tray icon to exit/show.  Or you can simply just left-click the icon.
