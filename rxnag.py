@@ -146,6 +146,7 @@ class RxNagWidget(QWidget):
     def mark_as_taken(self):
         self.last_taken = int(time.time())
         self.last_taken_label.setText(self.get_last_taken_text())
+        self.next_dose_label.setText(self.get_next_dose_text())
         self.parent().save_config()
 
 class RxNag(QWidget):
