@@ -23,11 +23,11 @@ It is possible to add RxNag to auto run when you login.  For example, in Linux M
 ## Configuration
 Select the **[Config]** button.
 
-Notification interval (in minutes) [Default 5] - This is how often to check for next dose
-Notification shown  (in seconds) [Default 10] - How long the popup notification lasts before closing
-Notification sound file [Default reminder.wav] - Custom audio file (.wav,.ogg,.mp3) 
-Notification volume [Default 75%] 
-Start minimized - Start the application minimized to system tray.  (can also use `--minimized` argument)
+* Notification interval (in minutes) [Default 5] - This is how often to check for next dose
+* Notification shown  (in seconds) [Default 10] - How long the popup notification lasts before closing
+* Notification sound file [Default reminder.wav] - Custom audio file (.wav,.ogg,.mp3) 
+* Notification volume [Default 75%]
+* Start minimized - Start the application minimized to system tray.  (can also use `--minimized` argument)
 
 Configuration and all data are only stored in your home folder.
 ```$HOME/.local/share/rxnag/config.json```
