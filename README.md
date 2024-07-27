@@ -1,4 +1,4 @@
-# RxNag - Medication Reminder
+# 💊 RxNag - Medication Reminder
 
 A very lightweight off-line application to nag you when it is time to take your medications.  It is 100% free and open source. (GPL-3)
 
@@ -10,15 +10,30 @@ On Linux Mint, Ubuntu, Debian, etc. (Python3 should already be installed)
 
 ```apt install python3 python3-pyqt5 python3-pygame```
 
+## Installation
+
+### From github
+Using git:
+```git clone https://github.com/solorvox/rxnag```
+
+Launching RxNag options:
+
+1. Command line:  ```cd rxnag && ./rxnag.py```
+2. File manager, navigate to the rxnag folder and double click ```rxnag.py``` then select run
+
+It is possible to set RxNag to auto run when you login.  For example, in Linux Mint use **Mint Menu -> Startup Applications** then select the **[+]** icon. (plus)
+
+Select **Custom Command** then the **Browse** button on the command line.  After selecting ```rxnag.py``` and anything you like for name/description, you can then **Add**.
+
+### Releases
+Binary/flatpak/Windows versions are "Coming soon &tm;"
+
 ## Usage
 Add your medications, set their dose _interval_. (how often you take them) When you get a notification message simply click on the tray icon and then click the **[Mark taken]** button."  
 
 These notifications will continue every _notification interval_. (default 5 minutes)  
 
 You can **Mute** notifications to disable them per-medication.  While muted they will still be tracked when taken.
-
-## Auto run after login
-It is possible to add RxNag to auto run when you login.  For example, in Linux Mint for use **Mint Menu -> Startup Applications** then select the **[+]** icon. (plus)
 
 ## Configuration
 Select the **[Config]** button.
