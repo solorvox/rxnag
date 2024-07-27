@@ -13,6 +13,11 @@ from PyQt5.QtCore import QUrl
 from pathlib import Path
 import pyglet
 
+# Check if the script is already running
+pid = str(os.getpid())
+pidfile = "/tmp/my_script.pid"
+
+
 class RxNagWidget(QWidget):
     def __init__(self, medication, last_taken, interval, muted, parent=None):
         super().__init__(parent)
@@ -481,9 +486,22 @@ class AboutDialog(QDialog):
         layout.addLayout(button_layout)
         self.setLayout(layout)
 
+def single_instance_check():
+    if os.path.isfile(pidfile):
+        with open(pidfile, "r") as f:
+            running_pid = f.read()
+        if os.path.exists("/proc/" + running_pid):
+            print(f"Another instance of the script is already running with PID {running_pid}")
+            exit(1)
+
+    with open(pidfile, "w") as f:
+        f.write(pid)
+
 if __name__ == "__main__":
+    single_instance_check()
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
     reminder = RxNag()
     reminder.show()
     app.exec_()
+    os.remove(pidfile)
