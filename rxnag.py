@@ -7,16 +7,17 @@ from datetime import datetime, timedelta
 from PyQt5.QtGui import QIcon, QPalette, QColor
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox, QPushButton
-from PyQt5.QtWidgets import QMessageBox, QCheckBox, QSpacerItem, QSizePolicy, QLineEdit, QPushButton, QLabel
+from PyQt5.QtWidgets import QMessageBox, QCheckBox, QSpacerItem, QSizePolicy, QLineEdit, QPushButton
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QAction, QFileDialog
+from PyQt5.QtWidgets import QSlider
 from PyQt5.QtCore import QUrl
 from pathlib import Path
-import pyglet
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
+import pygame
 
 # Check if the script is already running
 pid = str(os.getpid())
 pidfile = "/tmp/my_script.pid"
-
 
 class RxNagWidget(QWidget):
     def __init__(self, medication, last_taken, interval, muted, parent=None):
@@ -87,31 +88,18 @@ class RxNagWidget(QWidget):
     def toggle_mute(self, checked):
         self.muted = checked
         self.parent().save_config()
-
+        
     def display_reminder(self):
         if self.parent().mute_all: # check if mute_all is set
             return
-        # Set the resource path to the directory containing the sound file
-        sound_file_dir = os.path.dirname(self.parent().sound_file)
-        pyglet.resource.path = [sound_file_dir]
-        pyglet.resource.reindex()
 
-        try:
-            if not self.parent().has_played_audio:
-                sound = pyglet.resource.media(os.path.basename(self.parent().sound_file), streaming=False)
-                sound.play()
-                # mark as having played audio to disable until next pass to prevent spamming user
-                self.parent().has_played_audio = True
-
-            self.parent().tray_icon.showMessage(
-                "Medication Reminder",
-                f"💊 Time to take {self.medication}",
-                QSystemTrayIcon.Information,
-                self.notice_delay * 1000
-            )
-        except pyglet.resource.ResourceNotFoundException:
-            self.parent().has_played_audio = False
-            QMessageBox.warning(self, "Sound File Not Found", f"The sound file '{self.parent().sound_file}' could not be found.")
+        self.parent().play_notification_sound()
+        self.parent().tray_icon.showMessage(
+            "Medication Reminder",
+            f"💊 Time to take {self.medication}",
+            QSystemTrayIcon.Information,
+            self.notice_delay * 1000
+        )
 
     def check_all_reminders(self):
         for medication_widget in self.medication_list:
@@ -161,10 +149,11 @@ class RxNag(QWidget):
         self.setGeometry(600, 200, 700, 500)
         self.notification_timer_mins = 1 
         self.sound_file = "reminder.wav"  # Default sound 
+        self.sound_volume = 0.75 # default 75%
         self.has_played_audio = False
         self.setWindowIcon(QIcon('icon.png'))
         self.mute_all = False
-
+        
         self.config_file = Path.home() / ".local" / "share" / "rxnag" / "config.json"
         self.load_config()
 
@@ -177,6 +166,19 @@ class RxNag(QWidget):
         
         self.timer = QTimer()
         self.start_notification_timer()
+
+    def play_notification_sound(self):
+        try:
+            if not self.has_played_audio:
+                sound = pygame.mixer.Sound(self.sound_file)
+                sound.set_volume(self.sound_volume)
+                sound.play()
+                # mark as having played audio to disable until next pass to prevent spamming user
+                # this is reset by RxNagWidget.check_all_reminders
+                self.has_played_audio = True
+        except FileNotFoundError:
+            self.has_played_audio = False
+            QMessageBox.warning(self, "Sound File Not Found", f"The sound file '{self.sound_file}' could not be found.")
 
     def start_notification_timer(self):        
         self.timer.timeout.connect(self.check_all_reminders)        
@@ -326,7 +328,8 @@ class RxNag(QWidget):
                 for widget in self.medication_list
             ],
             "notification_timer_mins": self.notification_timer_mins,
-            "sound_file": self.sound_file
+            "sound_file": self.sound_file,
+            "sound_volume": self.sound_volume
         }
         os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         with open(self.config_file, "w") as f:
@@ -347,6 +350,8 @@ class RxNag(QWidget):
             ]
             self.notification_timer_mins = config.get("notification_timer_mins", 5)
             self.sound_file = config.get("sound_file", "reminder.wav")
+            self.sound_volume = config.get("sound_volume", 0.75)
+            self.sound_volume = max(0.0, min(1.0, self.sound_volume))
         except (FileNotFoundError, json.JSONDecodeError, ValueError):
             self.config = []
             self.notification_timer_mins = 5
@@ -409,6 +414,7 @@ class ConfigDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Configuration")
         self.parent_widget = parent_widget
+        self.setFixedWidth(600)
 
         layout = QVBoxLayout()
         interval_layout = QHBoxLayout()
@@ -434,6 +440,20 @@ class ConfigDialog(QDialog):
         sound_layout.addWidget(self.sound_file_button)
         layout.addLayout(sound_layout)
 
+        # Volume slider
+        volume_layout = QHBoxLayout()
+        volume_label = QLabel("Notification volume: ")
+        self.volume_slider = QSlider(Qt.Horizontal)
+        self.volume_slider.setMinimum(0)
+        self.volume_slider.setMaximum(100)
+        self.volume_slider.setTickPosition(QSlider.TicksBothSides)
+        self.volume_slider.setTickInterval(5) 
+        self.volume_slider.setValue(int(self.parent_widget.sound_volume * 100))
+        self.volume_slider.valueChanged.connect(self.update_volume)
+        self.volume_slider.sliderReleased.connect(self.adjust_volume_feedback)
+        volume_layout.addWidget(volume_label)
+        volume_layout.addWidget(self.volume_slider)
+        layout.addLayout(volume_layout)
 
         button_layout = QHBoxLayout()
         self.save_button = QPushButton("&Save")
@@ -454,10 +474,22 @@ class ConfigDialog(QDialog):
             if selected_files:
                 selected_file = selected_files[0]
                 self.sound_file_label.setText(selected_file)
+    
+    def adjust_volume_feedback(self):
+        self.parent_widget.play_notification_sound()
+        self.parent_widget.has_played_audio = False    
+        
+    def update_volume(self):        
+        self.parent_widget.sound_volume = self.volume_slider.value() / 100.0            
+        
+    def set_volume_value(self):
+        self.parent_widget.play_notification_sound()
+        self.parent_widget.has_played_audio = False
 
     def update(self):
         self.parent_widget.notification_timer_mins = self.notification_timer_mins_input.value()
         self.parent_widget.sound_file = self.sound_file_label.text()
+        self.update_volume()
         self.parent_widget.restart_timer()
         self.parent_widget.save_config()
         self.hide()
@@ -499,6 +531,7 @@ def single_instance_check():
 
 if __name__ == "__main__":
     single_instance_check()
+    pygame.mixer.init() # setup sound system
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
     reminder = RxNag()

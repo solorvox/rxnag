@@ -4,11 +4,11 @@ A very lightweight off-line application to nag you when it is time to take your 
 
 ## Requirements
 
-You need Python3, PyQt5, and Pyglet for audio playback.
+You need Python3, PyQt5, and PyGame for audio playback.
 
 On Linux Mint, Ubuntu, Debian, etc. (Python3 should already be installed)
 
-```apt install python3 python3-pyqt5 python3-pyglet```
+```apt install python3 python3-pyqt5 python3-pygame```
 
 ## Usage
 Add your medications, set their dose _interval_. (how often you take them) When you get a notification message simply click on the tray icon and then click the **[Mark taken]** button."  
