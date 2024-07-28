@@ -112,26 +112,22 @@ class RxNagWidget(QWidget):
             self.display_reminder()
             
     def get_last_taken_text(self):
-        now = datetime.now()
         if self.last_taken > 0:
-            last_taken_dt = datetime.fromtimestamp(self.last_taken)
-            time_diff = now - last_taken_dt
-            hours_ago = time_diff.total_seconds() // 3600
-            if hours_ago < 1:
-                return f"Last taken: {int(time_diff.total_seconds() // 60)} mins ago"
-            else:
-                return f"Last taken: {int(hours_ago)} hours ago"
+            time_diff = int(time.time()) - self.last_taken
+            hours_ago = int(time_diff // 3600)
+            mins_ago = int((time_diff % 3600) // 60)
+            return f"Last taken: {hours_ago} hours {mins_ago} mins ago"
         else:
             return "Last taken: Never"
 
     def get_next_dose_text(self):
         next_dose_secs = self.last_taken + (self.interval * 3600) - int(time.time())
         if next_dose_secs <= 0:
-            return "Next dose: now"
-        elif next_dose_secs < 3600:
-            return f"Next dose: {int(next_dose_secs // 60)} mins"
+            return "Next dose: <b>now</b>"
         else:
-            return f"Next dose: {int(next_dose_secs // 3600)} hours"
+            hours = int(next_dose_secs // 3600)
+            mins = int((next_dose_secs % 3600) // 60)
+            return f"Next dose: {hours} hours {mins} mins"
 
     def delete_medication(self):
         self.parent().delete_medication(self)
