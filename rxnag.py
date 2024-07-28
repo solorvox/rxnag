@@ -577,10 +577,10 @@ def single_instance_check():
 
 if __name__ == "__main__":
     single_instance_check()
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--minimized", action="store_true")
-    parser.add_argument("--show", action="store_true")
-    args = parser.parse_args()
+    argparser = argparse.ArgumentParser()
+    argparser.add_argument("--minimized", action="store_true")
+    argparser.add_argument("--show", action="store_true")
+    args = argparser.parse_args()
 
     pygame.mixer.init() # setup sound system
 
