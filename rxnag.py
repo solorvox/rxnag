@@ -288,7 +288,7 @@ class RxNag(QWidget):
         self.mute_all_button.setCheckable(True)
         toolbar_area.addWidget(self.mute_all_button)
         self.exit_button = QPushButton("&Exit")
-        self.exit_button.clicked.connect(self.quit_app)
+        self.exit_button.clicked.connect(self.handle_exit)
         toolbar_area.addWidget(self.exit_button)
                     
         add_medication_layout = QHBoxLayout()
@@ -306,6 +306,24 @@ class RxNag(QWidget):
             medication_widget = RxNagWidget(medication, last_taken, interval, muted, self)
             self.medication_list.append(medication_widget)
             layout.addWidget(medication_widget)
+
+    def handle_exit(self):
+        # Create a message box with the two options
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Exit RxNag?")
+        msg_box.setText("Would you like to exit RxNag or minimize to the system tray?")        
+        msg_box.addButton("&Minimize to tray icon", QMessageBox.NoRole)
+        msg_box.addButton("&Exit RxNag", QMessageBox.YesRole)  
+        msg_box.setIcon(QMessageBox.Question)
+
+        # Show the message box and get the user's choice
+        result = msg_box.exec_()
+
+        if result == 1:  # Exit RxNag
+            app.quit()
+        else:  # Minimize to tray icon
+            self.hide()
+            self.tray_icon.show()
 
     def toggle_mute_all(self):
         self.mute_all = not self.mute_all
