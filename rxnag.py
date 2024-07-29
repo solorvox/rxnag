@@ -16,9 +16,9 @@ from pathlib import Path
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
 
-# Check if the script is already running
 pid = str(os.getpid())
-pidfile = "/tmp/my_script.pid"
+pidfile = os.path.join(os.path.sep, "tmp", "rxnag.pid")
+default_sound_file = 'reminder.wav'
 
 class RxNagWidget(QWidget):
     def __init__(self, medication, last_taken, interval, muted, parent=None):
@@ -190,18 +190,18 @@ class RxNag(QWidget):
         self.notification_timer_mins = 1 
         self.notification_shown_secs = 10
         self.play_sound = True
-        self.sound_file = "reminder.wav"  # Default sound 
+        self.sound_file = default_sound_file
         self.sound_volume = 0.75 # default 75%
-        self.has_played_audio = False
-        self.setWindowIcon(QIcon('icon.png'))
+        self.has_played_audio = False        
+        self.setWindowIcon(QIcon(os.path.join(get_script_path(), 'icon.png')))
         self.mute_all = False
         self.start_minimized = False
         self.medication_interval_default = 6 # number of hours a dose defaults
 
-        self.config_file = Path.home() / ".local" / "share" / "rxnag" / "config.json"
+        self.config_file = os.path.join(Path.home(), ".local", "share", "rxnag", "config.json")
         self.load_config()
 
-        self.tray_icon = QSystemTrayIcon(QIcon("icon.png"), self)
+        self.tray_icon = QSystemTrayIcon(QIcon(os.path.join(get_script_path(), 'icon.png')), self)
         self.tray_icon.activated.connect(self.show_window)
         self.tray_icon.setToolTip("RxNag")
 
@@ -216,7 +216,11 @@ class RxNag(QWidget):
             return
         try:
             if not self.has_played_audio:
-                sound = pygame.mixer.Sound(self.sound_file)
+                snd_file = self.sound_file
+                # if using relative path, ensure we append script's directory
+                if snd_file == default_sound_file:
+                    snd_file = os.path.join(get_script_path, default_sound_file)
+                sound = pygame.mixer.Sound(snd_file)
                 sound.set_volume(self.sound_volume)
                 sound.play()
                 # mark as having played audio to disable until next pass to prevent spamming user
@@ -417,13 +421,13 @@ class RxNag(QWidget):
             self.notification_timer_mins = config.get("notification_timer_mins", 5)
             self.notification_shown_secs = config.get("notification_shown_secs", 10)
             self.play_sound = config.get("play_sound", True)
-            self.sound_file = config.get("sound_file", "reminder.wav")
+            self.sound_file = config.get("sound_file", default_sound_file)
             self.sound_volume = config.get("sound_volume", 0.75)
             self.sound_volume = max(0.0, min(1.0, self.sound_volume))            
             self.start_minimized = config.get("start_minimized", False)
         except (FileNotFoundError, json.JSONDecodeError, ValueError):
             self.config = []
-            self.sound_file = "reminder.wav"
+            self.sound_file = default_sound_file
 
         self.notification_timer_mins = max(1, min(60, self.notification_timer_mins))
         self.notification_shown_secs = max(1, min(60, self.notification_shown_secs))
@@ -633,6 +637,9 @@ def single_instance_check():
 
     with open(pidfile, "w") as f:
         f.write(pid)
+
+def get_script_path():
+    return os.path.dirname(os.path.realpath(__file__))
 
 if __name__ == "__main__":
     single_instance_check()
