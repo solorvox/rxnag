@@ -27,46 +27,85 @@ class RxNagWidget(QWidget):
         self.last_taken = last_taken # in seconds since epoch
         self.muted = muted
         self.interval = interval  # in hours
-        layout = QVBoxLayout()
+        
+        # Create a container widget to hold all the other widgets
+        self.container = QWidget()
+        container_layout = QVBoxLayout()
+        self.container.setObjectName("MedicationContainer")
+        self.container.setLayout(container_layout)
+        self.container.setContentsMargins(0,0,0,0)
+
         medline_layout = QHBoxLayout()
 
         self.medication_label = QLabel(medication)
-        medline_layout.addWidget(self.medication_label)     
+        medline_layout.addWidget(self.medication_label)
 
         spacer = QSpacerItem(40, 20, QSizePolicy.Expanding, QSizePolicy.Minimum)
         medline_layout.addItem(spacer)
-        
+
         self.edit_button = QPushButton("Edit")
         self.edit_button.clicked.connect(self.edit_medication)
         self.edit_button.setFixedWidth(80)
         medline_layout.addWidget(self.edit_button)
-        
+
         # Mute checkbox
         self.mute_checkbox = QCheckBox("Mute")
         self.mute_checkbox.setChecked(self.muted)
         self.mute_checkbox.toggled.connect(self.toggle_mute)
         medline_layout.addWidget(self.mute_checkbox)
-       
-        layout.addLayout(medline_layout)
+
+        container_layout.addLayout(medline_layout)
 
         time_text_layout = QHBoxLayout()
         self.last_taken_label = QLabel(self.get_last_taken_text())
-        time_text_layout.addWidget(self.last_taken_label)        
+        time_text_layout.addWidget(self.last_taken_label)
         self.next_dose_label = QLabel(self.get_next_dose_text())
-        time_text_layout.addWidget(self.next_dose_label)    
-        layout.addLayout(time_text_layout)
+        time_text_layout.addWidget(self.next_dose_label)
+        container_layout.addLayout(time_text_layout)
 
         self.taken_button = QPushButton("Mark taken")
         self.taken_button.clicked.connect(self.mark_as_taken)
-        
-        layout.addWidget(self.taken_button)        
-               
+
+        container_layout.addWidget(self.taken_button)
+
         # keep the times updated in the gui
         self.update_timer = QTimer(self)
         self.update_timer.timeout.connect(self.update_time_labels)
-        self.update_timer.start(60*1000) # 1 min
+        self.update_timer.start(60 * 1000)  # 1 min
 
+        # Add the container widget to the main layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.container)
+        layout.setContentsMargins(0,0,0,0)
+        layout.setSpacing(0)
+        
         self.setLayout(layout)
+
+        # Set the initial style
+        self.update_style()
+
+    def update_style(self):
+        now = int(time.time())
+        next_due = self.last_taken + (self.interval * 3600)
+
+        # Get the current desktop theme's color
+        palette = self.palette()
+        border_color = palette.color(QPalette.Highlight)
+
+        # Darken the border color a bit
+        dark_color = palette.color(QPalette.Window).darker(64)
+
+        if now >= next_due:
+            # Set the border when the medication is due
+            style = "QWidget#MedicationContainer {"
+            style+= f"border: 2px solid "
+            style+= f"{border_color.name(QColor.HexRgb)}; "
+            style+= " background-color: "
+            style+= f"{dark_color.name(QColor.HexRgb)};}}"
+            self.container.setStyleSheet(style)
+        else:
+            # Reset the style to the default
+            self.container.setStyleSheet("")
 
     def update_time_labels(self):
         self.last_taken_label.setText(self.get_last_taken_text())        
@@ -84,6 +123,7 @@ class RxNagWidget(QWidget):
             self.parent().save_config()
             self.parent().update_ui()
             self.update_time_labels()
+            self.update_style()
 
     def toggle_mute(self, checked):
         self.muted = checked
@@ -110,7 +150,8 @@ class RxNagWidget(QWidget):
         now = int(time.time())
         if now >= next_due and not self.muted:
             self.display_reminder()
-            
+        self.update_style()
+
     def get_last_taken_text(self):
         if self.last_taken > 0:
             time_diff = int(time.time()) - self.last_taken
@@ -131,12 +172,15 @@ class RxNagWidget(QWidget):
 
     def delete_medication(self):
         self.parent().delete_medication(self)
+        self.parent().adjustSize()
+        self.parent().setMinimumSize(700, 500)
 
     def mark_as_taken(self):
         self.last_taken = int(time.time())
         self.last_taken_label.setText(self.get_last_taken_text())
         self.next_dose_label.setText(self.get_next_dose_text())
         self.parent().save_config()
+        self.update_style()
 
 class RxNag(QWidget):
     def __init__(self):
@@ -152,7 +196,8 @@ class RxNag(QWidget):
         self.setWindowIcon(QIcon('icon.png'))
         self.mute_all = False
         self.start_minimized = False
-        
+        self.medication_interval_default = 6 # number of hours a dose defaults
+
         self.config_file = Path.home() / ".local" / "share" / "rxnag" / "config.json"
         self.load_config()
 
@@ -295,7 +340,7 @@ class RxNag(QWidget):
     def add_medication(self, muted=False):
         medication = self.medication_input.text().strip()
         if medication:
-            medication_widget = RxNagWidget(medication, int(time.time()), self.notification_shown_secs, muted, self)
+            medication_widget = RxNagWidget(medication, int(time.time()), self.medication_interval_default, muted, self)
             self.medication_list.append(medication_widget)
             self.layout().insertWidget(len(self.medication_list), medication_widget)
             self.medication_input.clear()
@@ -545,7 +590,7 @@ class AboutDialog(QDialog):
 
         label_text = """
             <p>RxNag - Medication Reminder</p>
-            <p>Version 1.0.2</p>
+            <p>Version 1.0.3</p>
             <p>Copyright (c) 2024 Solorvox @ <a href="https://epic.geek.nz/">epic.geek.nz</a></p>
             <p>License: GPL-3</p>
         """
