@@ -260,7 +260,7 @@ class RxNag(QWidget):
 
     def delete_medication(self, medication_widget):
         msgBox = QMessageBox()
-        msgBox.setIcon(QMessageBox.Information)
+        msgBox.setIcon(QMessageBox.Warning)
         msgBox.setText(f"Are you sure you wish to remove {medication_widget.medication}?")
         msgBox.setWindowTitle("Confirm delete medication?")
         msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)        
