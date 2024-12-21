@@ -155,9 +155,8 @@ class RxNagWidget(QWidget):
     def get_last_taken_text(self):
         if self.last_taken > 0:
             time_diff = int(time.time()) - self.last_taken
-            hours_ago = int(time_diff // 3600)
-            mins_ago = int((time_diff % 3600) // 60)
-            return f"Last taken: {hours_ago} hours {mins_ago} mins ago"
+            time_string = Utils.format_time(time_diff)
+            return f"Last taken: {time_string} ago"
         else:
             return "Last taken: Never"
 
@@ -166,9 +165,8 @@ class RxNagWidget(QWidget):
         if next_dose_secs <= 0:
             return "Next dose: <b>now</b>"
         else:
-            hours = int(next_dose_secs // 3600)
-            mins = int((next_dose_secs % 3600) // 60)
-            return f"Next dose: {hours} hours {mins} mins"
+            time_string = Utils.format_time(next_dose_secs)
+            return f"Next dose: {time_string}"
 
     def delete_medication(self):
         self.parent().delete_medication(self)
@@ -181,6 +179,48 @@ class RxNagWidget(QWidget):
         self.next_dose_label.setText(self.get_next_dose_text())
         self.parent().save_config()
         self.update_style()
+
+class Utils:
+    @staticmethod
+    def format_time(seconds):
+        result = ""
+
+        if seconds >= 86400:  # 1 day = 86400 seconds
+            days = seconds // (24 * 3600)
+            seconds %= (24 * 3600)  # Update seconds to remaining seconds after days
+            hours = seconds // 3600  # Calculate remaining hours
+            day_label = "Day" if days == 1 else "Days"
+            hour_label = "Hour" if hours == 1 else "Hours"
+            time_parts = []
+            if days > 0:
+                time_parts.append(f"{days} {day_label}")
+            if hours > 0:
+                time_parts.append(f"{hours} {hour_label}")
+            result = ", ".join(time_parts)
+        elif seconds >= 3600:  # If there are no days but there are hours
+            hours = seconds // 3600
+            seconds %= 3600  # Update seconds to remaining seconds after hours
+            minutes = seconds // 60  # Calculate remaining minutes
+            hour_label = "Hour" if hours == 1 else "Hours"
+            minute_label = "Minute" if minutes == 1 else "Minutes"
+            time_parts = []
+            if hours > 0:
+                time_parts.append(f"{hours} {hour_label}")
+            if minutes > 0:
+                time_parts.append(f"{minutes} {minute_label}")
+            result = ", ".join(time_parts)
+        elif seconds >= 60:  # If there are only minutes and seconds
+            minutes = seconds // 60
+            remaining_seconds = seconds % 60
+            minute_label = "Minute" if minutes == 1 else "Minutes"
+            time_parts = []
+            if minutes > 0:
+                time_parts.append(f"{minutes} {minute_label}")
+            result = ", ".join(time_parts)
+        else:  # If there are only seconds
+            result = f"{seconds} Seconds"
+
+        return result
 
 class RxNag(QWidget):
     def __init__(self):
@@ -458,6 +498,7 @@ class EditMedicationDialog(QDialog):
         interval_label = QLabel("Interval (hours):")
         self.interval_input = QSpinBox()
         self.interval_input.setMinimum(1)        
+        self.interval_input.setMaximum(999)
         self.interval_input.setValue(interval)
         interval_layout.addWidget(interval_label)
         interval_layout.addWidget(self.interval_input)        
@@ -467,6 +508,7 @@ class EditMedicationDialog(QDialog):
         self.delete_button = QPushButton("Delete")
         self.delete_button.clicked.connect(self.delete)
         self.save_button = QPushButton("Save")
+        self.save_button.setDefault(True)
         self.cancel_button = QPushButton("Cancel")
         self.save_button.clicked.connect(self.accept)
         self.cancel_button.clicked.connect(self.reject)
@@ -612,7 +654,7 @@ class AboutDialog(QDialog):
 
         label_text = """
             <p>RxNag - Medication Reminder</p>
-            <p>Version 1.0.3</p>
+            <p>Version 1.0.4</p>
             <p>Copyright (c) 2024 Solorvox @ <a href="https://epic.geek.nz/">epic.geek.nz</a></p>
             <p>License: GPL-3</p>
         """
