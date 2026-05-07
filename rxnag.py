@@ -185,44 +185,19 @@ class RxNagWidget(QWidget):
 
 class Utils:
     @staticmethod
-    def format_time(seconds):
-        result = ""
-
-        if seconds >= 86400:  # 1 day = 86400 seconds
-            days = seconds // (24 * 3600)
-            seconds %= (24 * 3600)  # Update seconds to remaining seconds after days
-            hours = seconds // 3600  # Calculate remaining hours
-            day_label = "Day" if days == 1 else "Days"
-            hour_label = "Hour" if hours == 1 else "Hours"
-            time_parts = []
-            if days > 0:
-                time_parts.append(f"{days} {day_label}")
-            if hours > 0:
-                time_parts.append(f"{hours} {hour_label}")
-            result = ", ".join(time_parts)
-        elif seconds >= 3600:  # If there are no days but there are hours
-            hours = seconds // 3600
-            seconds %= 3600  # Update seconds to remaining seconds after hours
-            minutes = seconds // 60  # Calculate remaining minutes
-            hour_label = "Hour" if hours == 1 else "Hours"
-            minute_label = "Minute" if minutes == 1 else "Minutes"
-            time_parts = []
-            if hours > 0:
-                time_parts.append(f"{hours} {hour_label}")
-            if minutes > 0:
-                time_parts.append(f"{minutes} {minute_label}")
-            result = ", ".join(time_parts)
-        elif seconds >= 60:  # If there are only minutes and seconds
-            minutes = seconds // 60
-            minute_label = "Minute" if minutes == 1 else "Minutes"
-            time_parts = []
-            if minutes > 0:
-                time_parts.append(f"{minutes} {minute_label}")
-            result = ", ".join(time_parts)
-        else:  # If there are only seconds
-            result = f"{seconds} Seconds"
-
-        return result
+    def format_time(seconds: int) -> str:
+        if seconds < 0:
+            return "0 Seconds"
+        days, rem = divmod(seconds, 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, secs = divmod(rem, 60)
+        parts = []
+        if days: parts.append(f"{days} {'Day' if days == 1 else 'Days'}")
+        if hours: parts.append(f"{hours} {'Hour' if hours == 1 else 'Hours'}")
+        if minutes and not days: parts.append(f"{minutes} {'Minute' if minutes == 1 else 'Minutes'}")
+        if secs and not (days or hours or minutes):
+            parts.append(f"{secs} Seconds")
+        return ", ".join(parts) if parts else "0 Seconds"
 
 class RxNag(QWidget):
     def __init__(self, audio_available : bool):
