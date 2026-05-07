@@ -225,12 +225,13 @@ class Utils:
         return result
 
 class RxNag(QWidget):
-    def __init__(self):
+    def __init__(self, audio_available : bool):
         super().__init__()
         self.setWindowTitle("RxNag - Medication Reminder")
         self.setGeometry(600, 200, 700, 500)
         self.notification_timer_mins = 1
         self.notification_shown_secs = 10
+        self.audio_available = audio_available
         self.play_sound = True
         self.sound_file = default_sound_file
         self.sound_volume = 0.75 # default 75%
@@ -254,14 +255,15 @@ class RxNag(QWidget):
         self.start_notification_timer()
 
     def play_notification_sound(self):
-        if not self.play_sound: # check if sound disabled
+        # check if sound available or muted
+        if not (self.play_sound or self.audio_available):
             return
         try:
             if not self.has_played_audio:
                 snd_file = self.sound_file
                 # if using relative path, ensure we append script's directory
                 if snd_file == default_sound_file:
-                    snd_file = os.path.join(get_script_path, default_sound_file)
+                    snd_file = os.path.join(get_script_path(), default_sound_file)
                 sound = pygame.mixer.Sound(snd_file)
                 sound.set_volume(self.sound_volume)
                 sound.play()
@@ -699,11 +701,16 @@ if __name__ == "__main__":
     argparser.add_argument("--show", action="store_true")
     args = argparser.parse_args()
 
-    pygame.mixer.init() # setup sound system
+    audio_available = False
+    try:
+        pygame.mixer.init()
+        audio_available = True
+    except Exception:
+        audio_available = False
 
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
-    reminder = RxNag()
+    reminder = RxNag(audio_available)
     # if not set to minimize, show the main window
     if args.show or not args.minimized and not reminder.start_minimized:
         reminder.show()
