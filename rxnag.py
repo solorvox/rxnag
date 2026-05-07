@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-# rxnag - Medicaiton reminder app
+# rxnag - Medication reminder app
 # Copyright (c) 2024-2026 Solorvox solorvox (at) epic.geek.nz
 # Source: https://github.com/solorvox/rxnag
 # License: GPL-3 https://www.gnu.org/licenses/gpl-3.0.txt
@@ -10,12 +10,14 @@ import argparse
 import atexit
 from dateutil import parser
 from PyQt5.QtGui import QIcon, QPalette, QColor
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox, QPushButton
 from PyQt5.QtWidgets import QMessageBox, QCheckBox, QSpacerItem, QSizePolicy
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QAction, QFileDialog
 from PyQt5.QtWidgets import QSlider
 from pathlib import Path
+import datetime
+
 os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "hide"
 import pygame
 
@@ -24,10 +26,17 @@ pidfile = os.path.join(os.path.sep, "tmp", "rxnag.pid")
 default_sound_file = 'reminder.wav'
 
 class RxNagWidget(QWidget):
+    # Signals for decoupled communication
+    taken = pyqtSignal()
+    muted_changed = pyqtSignal(bool)
+    edited = pyqtSignal()
+    delete_requested = pyqtSignal()
+    show_reminder = pyqtSignal(str)
+
     def __init__(self, medication: str, last_taken: int, interval: int, muted: bool, parent=None):
         super().__init__(parent)
         self.medication = medication
-        self.last_taken = last_taken # in seconds since epoch
+        self.last_taken = last_taken  # in seconds since epoch
         self.muted = muted
         self.interval = interval  # in hours
 
@@ -36,7 +45,7 @@ class RxNagWidget(QWidget):
         container_layout = QVBoxLayout()
         self.container.setObjectName("MedicationContainer")
         self.container.setLayout(container_layout)
-        self.container.setContentsMargins(0,0,0,0)
+        self.container.setContentsMargins(0, 0, 0, 0)
 
         medline_layout = QHBoxLayout()
 
@@ -54,7 +63,7 @@ class RxNagWidget(QWidget):
         # Mute checkbox
         self.mute_checkbox = QCheckBox("Mute")
         self.mute_checkbox.setChecked(self.muted)
-        self.mute_checkbox.toggled.connect(self.toggle_mute)
+        self.mute_checkbox.toggled.connect(self.on_mute_toggled)
         medline_layout.addWidget(self.mute_checkbox)
 
         container_layout.addLayout(medline_layout)
@@ -67,7 +76,7 @@ class RxNagWidget(QWidget):
         container_layout.addLayout(time_text_layout)
 
         self.taken_button = QPushButton("Mark taken")
-        self.taken_button.clicked.connect(self.mark_as_taken)
+        self.taken_button.clicked.connect(self.on_taken_clicked)
 
         container_layout.addWidget(self.taken_button)
 
@@ -79,13 +88,52 @@ class RxNagWidget(QWidget):
         # Add the container widget to the main layout
         layout = QVBoxLayout()
         layout.addWidget(self.container)
-        layout.setContentsMargins(0,0,0,0)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         self.setLayout(layout)
 
         # Set the initial style
         self.update_style()
+
+    def on_taken_clicked(self):
+        self.last_taken = int(time.time())
+        self.last_taken_label.setText(self.get_last_taken_text())
+        self.next_dose_label.setText(self.get_next_dose_text())
+        self.update_style()
+        self.taken.emit()
+
+    def on_mute_toggled(self, checked):
+        self.muted = checked
+        self.muted_changed.emit(checked)
+
+    def edit_medication(self):
+        edit_dialog = EditMedicationDialog(self.medication, self.last_taken, self.interval, self.muted, self)
+        if edit_dialog.exec_():
+            if edit_dialog.was_deleted:
+                self.delete_requested.emit()
+                return
+
+            self.medication = edit_dialog.medication_input.text()
+            strtime = edit_dialog.last_taken_input.text()
+            self.last_taken = int(parser.parse(strtime).timestamp())
+            self.interval = edit_dialog.interval_input.value()
+            self.medication_label.setText(self.medication)
+            self.last_taken_label.setText(self.get_last_taken_text())
+            self.update_time_labels()
+            self.update_style()
+            self.edited.emit()
+
+    def check_reminder(self):
+        next_due = self.last_taken + (self.interval * 3600)
+        now = int(time.time())
+        if now >= next_due and not self.muted:
+            self.show_reminder.emit(self.medication)
+        self.update_style()
+
+    def update_time_labels(self):
+        self.last_taken_label.setText(self.get_last_taken_text())
+        self.next_dose_label.setText(self.get_next_dose_text())
 
     def update_style(self):
         now = int(time.time())
@@ -101,59 +149,14 @@ class RxNagWidget(QWidget):
         if now >= next_due:
             # Set the border when the medication is due
             style = "QWidget#MedicationContainer {"
-            style+= "border: 2px solid "
-            style+= f"{border_color.name(QColor.HexRgb)}; "
-            style+= " background-color: "
-            style+= f"{dark_color.name(QColor.HexRgb)};}}"
+            style += "border: 2px solid "
+            style += f"{border_color.name(QColor.HexRgb)}; "
+            style += " background-color: "
+            style += f"{dark_color.name(QColor.HexRgb)};}}"
             self.container.setStyleSheet(style)
         else:
             # Reset the style to the default
             self.container.setStyleSheet("")
-
-    def update_time_labels(self):
-        self.last_taken_label.setText(self.get_last_taken_text())
-        self.next_dose_label.setText(self.get_next_dose_text())
-
-    def edit_medication(self):
-        edit_dialog = EditMedicationDialog(self.medication, self.last_taken, self.interval, self.muted, self)
-        if edit_dialog.exec_():
-            self.medication = edit_dialog.medication_input.text()
-            strtime = edit_dialog.last_taken_input.text()
-            self.last_taken = int(parser.parse(strtime).timestamp())
-            self.interval = edit_dialog.interval_input.value()
-            self.medication_label.setText(self.medication)
-            self.last_taken_label.setText(self.get_last_taken_text())
-            self.parent().save_config()
-            self.parent().update_ui()
-            self.update_time_labels()
-            self.update_style()
-
-    def toggle_mute(self, checked):
-        self.muted = checked
-        self.parent().save_config()
-
-    def display_reminder(self):
-        if self.parent().mute_all or self.muted: # check if muted
-            return
-
-        self.parent().play_notification_sound()
-        self.parent().tray_icon.showMessage(
-            "Medication Reminder",
-            f"💊 Time to take {self.medication}",
-            QSystemTrayIcon.Information,
-            self.parent().notification_shown_secs * 1000
-        )
-
-    def check_all_reminders(self):
-        for medication_widget in self.medication_list:
-            medication_widget.check_reminder()
-
-    def check_reminder(self):
-        next_due = self.last_taken + (self.interval * 3600)
-        now = int(time.time())
-        if now >= next_due and not self.muted:
-            self.display_reminder()
-        self.update_style()
 
     def get_last_taken_text(self):
         if self.last_taken > 0:
@@ -170,18 +173,6 @@ class RxNagWidget(QWidget):
         else:
             time_string = Utils.format_time(next_dose_secs)
             return f"Next dose: {time_string}"
-
-    def delete_medication(self):
-        self.parent().delete_medication(self)
-        self.parent().adjustSize()
-        self.parent().setMinimumSize(700, 500)
-
-    def mark_as_taken(self):
-        self.last_taken = int(time.time())
-        self.last_taken_label.setText(self.get_last_taken_text())
-        self.next_dose_label.setText(self.get_next_dose_text())
-        self.parent().save_config()
-        self.update_style()
 
 class Utils:
     @staticmethod
@@ -200,7 +191,7 @@ class Utils:
         return ", ".join(parts) if parts else "0 Seconds"
 
 class RxNag(QWidget):
-    def __init__(self, audio_available : bool):
+    def __init__(self, audio_available: bool):
         super().__init__()
         self.setWindowTitle("RxNag - Medication Reminder")
         self.setGeometry(600, 200, 700, 500)
@@ -209,45 +200,51 @@ class RxNag(QWidget):
         self.audio_available = audio_available
         self.play_sound = True
         self.sound_file = default_sound_file
-        self.sound_volume = 0.75 # default 75%
+        self.sound_volume = 0.75  # default 75%
         self.has_played_audio = False
         self.setWindowIcon(QIcon(os.path.join(get_script_path(), 'icon.png')))
         self.mute_all = False
         self.start_minimized = False
-        self.medication_interval_default = 6 # number of hours a dose defaults
+        self.medication_interval_default = 6  # number of hours a dose defaults
 
         self.config_file = os.path.join(Path.home(), ".local", "share", "rxnag", "config.json")
         self.load_config()
 
         self.tray_icon = QSystemTrayIcon(QIcon(os.path.join(get_script_path(), 'icon.png')), self)
-        self.tray_icon.activated.connect(self.show_window)
         self.tray_icon.setToolTip("RxNag")
 
         self.create_ui()
         self.create_tray_menu()
 
+        # Single tray activation connection
+        self.tray_icon.activated.connect(self.on_tray_activated)
+        self.tray_icon.show()
+
         self.timer = QTimer()
         self.start_notification_timer()
 
     def play_notification_sound(self):
-        # check if sound available or muted
-        if not (self.play_sound or self.audio_available):
+        # Check if sound is enabled and pygame/audio is available
+        if not (self.play_sound and self.audio_available):
             return
+
         try:
             if not self.has_played_audio:
                 snd_file = self.sound_file
-                # if using relative path, ensure we append script's directory
+                # If using relative path, ensure we append script's directory
                 if snd_file == default_sound_file:
                     snd_file = os.path.join(get_script_path(), default_sound_file)
                 sound = pygame.mixer.Sound(snd_file)
                 sound.set_volume(self.sound_volume)
                 sound.play()
-                # mark as having played audio to disable until next pass to prevent spamming user
-                # this is reset by RxNagWidget.check_all_reminders
                 self.has_played_audio = True
         except FileNotFoundError:
             self.has_played_audio = False
-            QMessageBox.warning(self, "Sound File Not Found", f"The sound file '{self.sound_file}' could not be found.")
+            QMessageBox.warning(self, "Sound File Not Found",
+                                f"The sound file '{self.sound_file}' could not be found.")
+        except Exception as e:
+            # Fallback silent handling to avoid crashes
+            self.has_played_audio = False
 
     def start_notification_timer(self):
         self.timer.timeout.connect(self.check_all_reminders)
@@ -258,39 +255,45 @@ class RxNag(QWidget):
         self.start_notification_timer()
 
     def check_all_reminders(self):
-        self.has_played_audio = False # reset audio status
+        self.has_played_audio = False  # reset audio status for this cycle
         for medication_widget in self.medication_list:
             medication_widget.check_reminder()
-        self.update_ui()
 
-    def update_ui(self):
-        # Remove all existing medication widgets
-        for i in reversed(range(self.layout().count())):
-            widget = self.layout().itemAt(i).widget()
-            if isinstance(widget, RxNagWidget):
-                self.layout().removeWidget(widget)
-                widget.setParent(None)
+    # Signal handlers (decoupled from widgets)
+    def on_med_taken(self, widget):
+        self.save_config()
 
-        # Add the updated medication widgets
-        if self.medication_list:
-            for medication_widget in self.medication_list:
-                self.layout().addWidget(medication_widget)
+    def on_med_muted(self, widget, checked):
+        self.save_config()
 
+    def on_med_edited(self, widget):
+        self.save_config()
 
-    def delete_medication(self, medication_widget):
-        msgBox = QMessageBox()
-        msgBox.setIcon(QMessageBox.Warning)
-        msgBox.setText(f"Are you sure you wish to remove {medication_widget.medication}?")
-        msgBox.setWindowTitle("Confirm delete medication?")
-        msgBox.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
-        msgBox.setDefaultButton(QMessageBox.No)
+    def on_med_delete_requested(self, widget):
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setText(f"Are you sure you wish to remove {widget.medication}?")
+        msg.setWindowTitle("Confirm delete medication?")
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
 
-        returnValue = msgBox.exec()
-        if returnValue == QMessageBox.Yes:
-            self.medication_list.remove(medication_widget)
-            self.layout().removeWidget(medication_widget)
-            medication_widget.deleteLater()
+        if msg.exec_() == QMessageBox.Yes:
+            self.medication_list.remove(widget)
+            self.layout().removeWidget(widget)
+            widget.deleteLater()
             self.save_config()
+
+    def on_show_reminder(self, medication_name):
+        if self.mute_all:
+            return
+
+        self.play_notification_sound()
+        self.tray_icon.showMessage(
+            "Medication Reminder",
+            f"💊 Time to take {medication_name}",
+            QSystemTrayIcon.Information,
+            self.notification_shown_secs * 1000
+        )
 
     def create_ui(self):
         layout = QVBoxLayout()
@@ -300,7 +303,6 @@ class RxNag(QWidget):
         self.config_button = QPushButton("&Config")
         self.config_button.clicked.connect(self.show_config_dialog)
         toolbar_area.addWidget(self.config_button)
-        layout.addLayout(toolbar_area)
 
         self.about_button = QPushButton("A&bout")
         self.about_button.clicked.connect(self.show_about_dialog)
@@ -310,15 +312,17 @@ class RxNag(QWidget):
         self.mute_all_button.clicked.connect(self.toggle_mute_all)
         self.mute_all_button.setCheckable(True)
         toolbar_area.addWidget(self.mute_all_button)
+
         self.exit_button = QPushButton("&Exit")
         self.exit_button.clicked.connect(self.handle_exit)
         toolbar_area.addWidget(self.exit_button)
+
+        layout.addLayout(toolbar_area)
 
         add_medication_layout = QHBoxLayout()
         self.medication_input = QLineEdit()
         self.medication_input.setPlaceholderText("Add new medication")
         self.add_button = QPushButton("&Add")
-        add_medication_layout.addWidget(self.medication_input)
         self.add_button.clicked.connect(self.add_medication)
         add_medication_layout.addWidget(self.medication_input)
         add_medication_layout.addWidget(self.add_button)
@@ -330,23 +334,28 @@ class RxNag(QWidget):
             self.medication_list.append(medication_widget)
             layout.addWidget(medication_widget)
 
+            # Connect signals (use default arg to capture widget)
+            w = medication_widget
+            w.taken.connect(lambda _, w=w: self.on_med_taken(w))
+            w.muted_changed.connect(lambda c, w=w: self.on_med_muted(w, c))
+            w.edited.connect(lambda _, w=w: self.on_med_edited(w))
+            w.delete_requested.connect(lambda _, w=w: self.on_med_delete_requested(w))
+            w.show_reminder.connect(self.on_show_reminder)
+
     def handle_exit(self):
-        # Create a message box with the two options
         msg_box = QMessageBox(self)
         msg_box.setWindowTitle("Exit RxNag?")
         msg_box.setText("Would you like to exit RxNag or minimize to the system tray?")
-        msg_box.addButton("&Minimize to tray icon", QMessageBox.NoRole)
-        msg_box.addButton("&Exit RxNag", QMessageBox.YesRole)
+        minimize_btn = msg_box.addButton("&Minimize to tray icon", QMessageBox.NoRole)
+        exit_btn = msg_box.addButton("&Exit RxNag", QMessageBox.YesRole)
         msg_box.setIcon(QMessageBox.Question)
 
-        # Show the message box and get the user's choice
-        result = msg_box.exec_()
-
-        if result == 1:  # Exit RxNag
-            app.quit()
-        else:  # Minimize to tray icon
+        msg_box.exec_()
+        clicked = msg_box.clickedButton()
+        if clicked == exit_btn:
+            QApplication.instance().quit()
+        else:
             self.hide()
-            self.tray_icon.show()
 
     def toggle_mute_all(self):
         self.mute_all = not self.mute_all
@@ -373,35 +382,47 @@ class RxNag(QWidget):
         tray_menu.addAction(about_action)
         tray_menu.addAction(show_action)
         tray_menu.addAction(exit_action)
-        self.tray_icon.activated.connect(self.toggle_window)
         self.tray_icon.setContextMenu(tray_menu)
-        self.tray_icon.show()
-
 
     def add_medication(self, muted=False):
         medication = self.medication_input.text().strip()
         if medication:
-            medication_widget = RxNagWidget(medication, int(time.time()), self.medication_interval_default, muted, self)
+            medication_widget = RxNagWidget(medication, int(time.time()),
+                                            self.medication_interval_default, muted, self)
             self.medication_list.append(medication_widget)
             self.layout().addWidget(medication_widget)
+
+            # Connect signals
+            w = medication_widget
+            w.taken.connect(lambda _, w=w: self.on_med_taken(w))
+            w.muted_changed.connect(lambda c, w=w: self.on_med_muted(w, c))
+            w.edited.connect(lambda _, w=w: self.on_med_edited(w))
+            w.delete_requested.connect(lambda _, w=w: self.on_med_delete_requested(w))
+            w.show_reminder.connect(self.on_show_reminder)
+
             self.medication_input.clear()
             self.save_config()
-            self.update_ui()
 
-    def show_window(self): # selected show from tray icon context menu
-        if self.isHidden():
-            self.show()
-            self.activateWindow()
-        else:
-            self.hide()
+    def closeEvent(self, event):
+        # Always minimize to tray instead of closing
+        event.ignore()
+        self.hide()
 
-    def toggle_window(self, reason=None):
-        if reason == QSystemTrayIcon.Trigger: # left-clicked icon in systray
-            if self.isHidden():
-                self.activateWindow()
+    def show_window(self):
+        # Used by tray menu "Show" action
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
+    def on_tray_activated(self, reason):
+        # Left-click (Trigger) or double-click (DoubleClick) depending on DE
+        if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
+            if self.isVisible():
+                self.hide()
             else:
-                if not self.hasFocus():
-                    self.raise_()
+                self.show()
+                self.raise_()
+                self.activateWindow()
 
     def quit_app(self):
         self.save_config()
@@ -410,7 +431,10 @@ class RxNag(QWidget):
     def save_config(self):
         config = {
             "medications": [
-                {"name": widget.medication, "last_taken": widget.last_taken, "interval": widget.interval, "muted": widget.muted}
+                {"name": widget.medication,
+                 "last_taken": widget.last_taken,
+                 "interval": widget.interval,
+                 "muted": widget.muted}
                 for widget in self.medication_list
             ],
             "notification_timer_mins": self.notification_timer_mins,
@@ -455,8 +479,8 @@ class EditMedicationDialog(QDialog):
     def __init__(self, medication, last_taken, interval, muted, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Edit Medication")
-        self.parent_widget = parent
-        self.medication = medication
+        self.was_deleted = False
+
         layout = QVBoxLayout()
 
         medication_layout = QHBoxLayout()
@@ -468,7 +492,9 @@ class EditMedicationDialog(QDialog):
 
         last_taken_layout = QHBoxLayout()
         last_taken_label = QLabel("Last Taken:")
-        self.last_taken_input = QLineEdit(datetime.fromtimestamp(last_taken).strftime('%Y-%m-%d %H:%M'))
+        self.last_taken_input = QLineEdit(
+            datetime.datetime.fromtimestamp(last_taken).strftime('%Y-%m-%d %H:%M')
+        )
         last_taken_layout.addWidget(last_taken_label)
         last_taken_layout.addWidget(self.last_taken_input)
         layout.addLayout(last_taken_layout)
@@ -499,7 +525,7 @@ class EditMedicationDialog(QDialog):
         self.setLayout(layout)
 
     def delete(self):
-        self.parent().delete_medication()
+        self.was_deleted = True
         self.accept()
 
 class ConfigDialog(QDialog):
@@ -510,6 +536,7 @@ class ConfigDialog(QDialog):
         self.setFixedWidth(600)
 
         layout = QVBoxLayout()
+
         interval_layout = QHBoxLayout()
         interval_label = QLabel("Notification timer interval (minutes): ")
         self.notification_timer_mins_input = QSpinBox()
@@ -587,6 +614,7 @@ class ConfigDialog(QDialog):
         button_layout.addWidget(self.cancel_button)
         button_layout.addWidget(self.save_button)
         layout.addLayout(button_layout)
+
         self.setLayout(layout)
 
     def select_sound_file(self):
@@ -612,17 +640,13 @@ class ConfigDialog(QDialog):
     def update_volume(self):
         self.parent_widget.sound_volume = self.volume_slider.value() / 100.0
 
-    def set_volume_value(self):
-        self.parent_widget.play_notification_sound()
-        self.parent_widget.has_played_audio = False
-
     def save_and_update(self):
         self.parent_widget.notification_timer_mins = self.notification_timer_mins_input.value()
         self.parent_widget.notification_shown_secs = self.notification_shown_secs_input.value()
         self.update_volume()
         self.parent_widget.restart_timer()
         self.parent_widget.save_config()
-        self.hide()
+        self.accept()
 
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
@@ -651,8 +675,8 @@ class AboutDialog(QDialog):
 def single_instance_check():
     if os.path.isfile(pidfile):
         with open(pidfile, "r") as f:
-            running_pid = f.read()
-        if os.path.exists("/proc/" + running_pid):
+            running_pid = f.read().strip()
+        if running_pid and os.path.exists("/proc/" + running_pid):
             print(f"Another instance of the script is already running with PID {running_pid}")
             exit(1)
 
@@ -686,7 +710,9 @@ if __name__ == "__main__":
     app = QApplication([])
     app.setQuitOnLastWindowClosed(False)
     reminder = RxNag(audio_available)
+
     # if not set to minimize, show the main window
-    if args.show or not args.minimized and not reminder.start_minimized:
+    if args.show or (not args.minimized and not reminder.start_minimized):
         reminder.show()
+
     app.exec_()
