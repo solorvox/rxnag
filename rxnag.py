@@ -14,7 +14,7 @@ from PyQt5.QtCore import Qt, QTimer, pyqtSignal
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox, QPushButton
 from PyQt5.QtWidgets import QMessageBox, QCheckBox, QSpacerItem, QSizePolicy
 from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon, QMenu, QAction, QFileDialog
-from PyQt5.QtWidgets import QSlider
+from PyQt5.QtWidgets import QSlider, QScrollArea
 from pathlib import Path
 import datetime
 
@@ -24,6 +24,7 @@ import pygame
 pid = str(os.getpid())
 pidfile = os.path.join(os.path.sep, "tmp", "rxnag.pid")
 default_sound_file = 'reminder.wav'
+VERSION = "1.0.5"
 
 class RxNagWidget(QWidget):
     # Signals for decoupled communication
@@ -194,7 +195,8 @@ class RxNag(QWidget):
     def __init__(self, audio_available: bool):
         super().__init__()
         self.setWindowTitle("RxNag - Medication Reminder")
-        self.setGeometry(600, 200, 700, 500)
+        # Larger default size
+        self.setGeometry(600, 200, 1000, 700)
         self.notification_timer_mins = 1
         self.notification_shown_secs = 10
         self.audio_available = audio_available
@@ -242,8 +244,7 @@ class RxNag(QWidget):
             self.has_played_audio = False
             QMessageBox.warning(self, "Sound File Not Found",
                                 f"The sound file '{self.sound_file}' could not be found.")
-        except Exception as e:
-            # Fallback silent handling to avoid crashes
+        except Exception:
             self.has_played_audio = False
 
     def start_notification_timer(self):
@@ -279,7 +280,7 @@ class RxNag(QWidget):
 
         if msg.exec_() == QMessageBox.Yes:
             self.medication_list.remove(widget)
-            self.layout().removeWidget(widget)
+            self.meds_layout.removeWidget(widget)
             widget.deleteLater()
             self.save_config()
 
@@ -296,50 +297,71 @@ class RxNag(QWidget):
         )
 
     def create_ui(self):
-        layout = QVBoxLayout()
-        self.setLayout(layout)
+        main_layout = QVBoxLayout()
+        self.setLayout(main_layout)
 
-        toolbar_area = QHBoxLayout()
+        # Top toolbar
+        toolbar_layout = QHBoxLayout()
         self.config_button = QPushButton("&Config")
         self.config_button.clicked.connect(self.show_config_dialog)
-        toolbar_area.addWidget(self.config_button)
+        toolbar_layout.addWidget(self.config_button)
 
         self.about_button = QPushButton("A&bout")
         self.about_button.clicked.connect(self.show_about_dialog)
-        toolbar_area.addWidget(self.about_button)
+        toolbar_layout.addWidget(self.about_button)
 
         self.mute_all_button = QPushButton("&Mute all")
         self.mute_all_button.clicked.connect(self.toggle_mute_all)
         self.mute_all_button.setCheckable(True)
-        toolbar_area.addWidget(self.mute_all_button)
+        toolbar_layout.addWidget(self.mute_all_button)
 
         self.exit_button = QPushButton("&Exit")
         self.exit_button.clicked.connect(self.handle_exit)
-        toolbar_area.addWidget(self.exit_button)
+        toolbar_layout.addWidget(self.exit_button)
 
-        layout.addLayout(toolbar_area)
+        main_layout.addLayout(toolbar_layout)
 
-        add_medication_layout = QHBoxLayout()
+        # Add medication row
+        add_layout = QHBoxLayout()
         self.medication_input = QLineEdit()
         self.medication_input.setPlaceholderText("Add new medication")
         self.add_button = QPushButton("&Add")
         self.add_button.clicked.connect(self.add_medication)
-        add_medication_layout.addWidget(self.medication_input)
-        add_medication_layout.addWidget(self.add_button)
-        layout.addLayout(add_medication_layout)
+        add_layout.addWidget(self.medication_input)
+        add_layout.addWidget(self.add_button)
+        main_layout.addLayout(add_layout)
 
+        # Scrollable area for medications
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+
+        # Container widget whose layout will hold all RxNagWidgets
+        self.scroll_container = QWidget()
+        self.meds_layout = QVBoxLayout()
+        self.meds_layout.setContentsMargins(0, 0, 0, 0)
+        self.meds_layout.setSpacing(4)
+        self.scroll_container.setLayout(self.meds_layout)
+        scroll.setWidget(self.scroll_container)
+
+        main_layout.addWidget(scroll, 1)  # stretches to fill available space
+
+        # Store list; don't call removeWidget/removeLater here; we'll manage via meds_layout
         self.medication_list = []
-        for medication, last_taken, interval, muted in self.config:
-            medication_widget = RxNagWidget(medication, last_taken, interval, muted, self)
-            self.medication_list.append(medication_widget)
-            layout.addWidget(medication_widget)
 
-            # Connect signals (use default arg to capture widget)
-            w = medication_widget
-            w.taken.connect(lambda _, w=w: self.on_med_taken(w))
-            w.muted_changed.connect(lambda c, w=w: self.on_med_muted(w, c))
-            w.edited.connect(lambda _, w=w: self.on_med_edited(w))
-            w.delete_requested.connect(lambda _, w=w: self.on_med_delete_requested(w))
+        # Load existing medications
+        for med in self.config:
+            widget = RxNagWidget(*med, self)
+            self.medication_list.append(widget)
+            self.meds_layout.addWidget(widget)
+
+            # Connect signals (fixed lambda signatures to match emitted args)
+            w = widget
+            w.taken.connect(lambda w=w: self.on_med_taken(w))
+            w.muted_changed.connect(lambda checked, w=w: self.on_med_muted(w, checked))
+            w.edited.connect(lambda w=w: self.on_med_edited(w))
+            w.delete_requested.connect(lambda w=w: self.on_med_delete_requested(w))
             w.show_reminder.connect(self.on_show_reminder)
 
     def handle_exit(self):
@@ -355,7 +377,7 @@ class RxNag(QWidget):
         if clicked == exit_btn:
             QApplication.instance().quit()
         else:
-            self.hide()
+            self.close()  # uses closeEvent to hide to tray
 
     def toggle_mute_all(self):
         self.mute_all = not self.mute_all
@@ -390,26 +412,21 @@ class RxNag(QWidget):
             medication_widget = RxNagWidget(medication, int(time.time()),
                                             self.medication_interval_default, muted, self)
             self.medication_list.append(medication_widget)
-            self.layout().addWidget(medication_widget)
+            self.meds_layout.addWidget(medication_widget)
 
-            # Connect signals
+            # Connect signals (fixed lambda signatures)
             w = medication_widget
-            w.taken.connect(lambda _, w=w: self.on_med_taken(w))
-            w.muted_changed.connect(lambda c, w=w: self.on_med_muted(w, c))
-            w.edited.connect(lambda _, w=w: self.on_med_edited(w))
-            w.delete_requested.connect(lambda _, w=w: self.on_med_delete_requested(w))
+            w.taken.connect(lambda w=w: self.on_med_taken(w))
+            w.muted_changed.connect(lambda checked, w=w: self.on_med_muted(w, checked))
+            w.edited.connect(lambda w=w: self.on_med_edited(w))
+            w.delete_requested.connect(lambda w=w: self.on_med_delete_requested(w))
             w.show_reminder.connect(self.on_show_reminder)
 
             self.medication_input.clear()
             self.save_config()
 
-    def closeEvent(self, event):
-        # Always minimize to tray instead of closing
-        event.ignore()
-        self.hide()
-
     def show_window(self):
-        # Used by tray menu "Show" action
+        # Used by tray menu "Show"
         self.show()
         self.raise_()
         self.activateWindow()
@@ -418,17 +435,24 @@ class RxNag(QWidget):
         # Left-click (Trigger) or double-click (DoubleClick) depending on DE
         if reason in (QSystemTrayIcon.Trigger, QSystemTrayIcon.DoubleClick):
             if self.isVisible():
-                self.hide()
+                self.close()  # uses closeEvent to hide to tray
             else:
                 self.show()
                 self.raise_()
                 self.activateWindow()
+
+    def closeEvent(self, event):
+        # Always minimize to tray instead of closing
+        event.ignore()
+        self.save_config()  # saves window geometry as well
+        self.hide()
 
     def quit_app(self):
         self.save_config()
         QApplication.instance().quit()
 
     def save_config(self):
+        geo = self.geometry()
         config = {
             "medications": [
                 {"name": widget.medication,
@@ -437,6 +461,12 @@ class RxNag(QWidget):
                  "muted": widget.muted}
                 for widget in self.medication_list
             ],
+            "window_geometry": {
+                "x": geo.x(),
+                "y": geo.y(),
+                "w": geo.width(),
+                "h": geo.height()
+            },
             "notification_timer_mins": self.notification_timer_mins,
             "notification_shown_secs": self.notification_shown_secs,
             "play_sound": self.play_sound,
@@ -461,6 +491,17 @@ class RxNag(QWidget):
                 )
                 for medication in config.get("medications", [])
             ]
+
+            # Restore saved window position/size
+            geo = config.get("window_geometry")
+            if geo and isinstance(geo, dict):
+                self.setGeometry(
+                    geo.get("x", 600),
+                    geo.get("y", 200),
+                    geo.get("w", 1000),
+                    geo.get("h", 700)
+                )
+
             self.notification_timer_mins = config.get("notification_timer_mins", 5)
             self.notification_shown_secs = config.get("notification_shown_secs", 10)
             self.play_sound = config.get("play_sound", True)
@@ -655,11 +696,11 @@ class AboutDialog(QDialog):
 
         layout = QVBoxLayout()
 
-        label_text = """
+        label_text = f"""
             <p>RxNag - Medication Reminder</p>
-            <p>Version 1.0.4</p>
+            <p>Version {VERSION}</p>
             <p>Copyright (c) 2024 Solorvox @ <a href="https://epic.geek.nz/">epic.geek.nz</a></p>
-            <p>License: GPL-3</p>
+            <p>License: <a href="https://www.gnu.org/licenses/gpl-3.0.txt">GPL-3</a></p>
         """
         self.label = QLabel(label_text)
         self.label.setOpenExternalLinks(True)
