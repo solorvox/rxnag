@@ -408,7 +408,7 @@ class RxNag(QWidget):
         if medication:
             medication_widget = RxNagWidget(medication, int(time.time()), self.medication_interval_default, muted, self)
             self.medication_list.append(medication_widget)
-            self.layout().insertWidget(len(self.medication_list), medication_widget)
+            self.layout().addWidget(medication_widget)
             self.medication_input.clear()
             self.save_config()
             self.update_ui()
