@@ -24,7 +24,7 @@ pidfile = os.path.join(os.path.sep, "tmp", "rxnag.pid")
 default_sound_file = 'reminder.wav'
 
 class RxNagWidget(QWidget):
-    def __init__(self, medication, last_taken, interval, muted, parent=None):
+    def __init__(self, medication: str, last_taken: int, interval: int, muted: bool, parent=None):
         super().__init__(parent)
         self.medication = medication
         self.last_taken = last_taken # in seconds since epoch
